@@ -194,6 +194,24 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# ==== SeeSaw YOLO project ====
+# Training outputs (large, reproducible)
+runs/
+
+# Large raw dataset layers
+datasets/layer1/
+datasets/layer2/
+datasets/layer3/
+
+# Track merged dataset (manageable size)
+!datasets/seesaw_children/
+
+# Track final CoreML model
+!export/seesaw-yolo11n.mlpackage
+
+# macOS
+.DS_Store
+
 # Cursor
 #  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
 #  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
@@ -205,3 +223,5 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+.md
