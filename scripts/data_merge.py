@@ -1,7 +1,8 @@
 """DS-019: Merge all three dataset layers into unified seesaw_children dataset.
 
 Auto-detects class mappings from Roboflow data.yaml exports and remaps to the
-canonical 25-class SeeSaw taxonomy. Splits into train/val/test.
+canonical SeeSaw taxonomy. Uses synonym mappings to merge alternate class names.
+Splits into train/val/test.
 
 Usage:
   # Local (default paths):
@@ -25,14 +26,51 @@ try:
 except ImportError:
     yaml = None
 
-# ── Canonical 25-class SeeSaw taxonomy (name → ID) ──────────────────────────
+# ── Canonical SeeSaw taxonomy (name → ID) ───────────────────────────────────
+# Original 25 classes (0-24) + all additional classes from Layer 2 & 3 datasets
 SEESAW_CLASSES = {
+    # Layer 1 — HomeObjects-3K (0-11)
     "bed": 0, "sofa": 1, "chair": 2, "table": 3, "lamp": 4, "tv": 5,
     "laptop": 6, "wardrobe": 7, "window": 8, "door": 9, "potted_plant": 10,
-    "photo_frame": 11, "teddy_bear": 12, "book": 13, "sports_ball": 14,
-    "backpack": 15, "bottle": 16, "cup": 17, "building_blocks": 18,
-    "dinosaur_toy": 19, "stuffed_animal": 20, "picture_book": 21, "crayon": 22,
-    "toy_car": 23, "puzzle_piece": 24,
+    "photo_frame": 11,
+    # Layer 2 — Roboflow Universe selections (12-17)
+    "teddy_bear": 12, "book": 13, "sports_ball": 14, "backpack": 15,
+    "bottle": 16, "cup": 17,
+    # Layer 3 — Original photos (18-24)
+    "building_blocks": 18, "dinosaur_toy": 19, "stuffed_animal": 20,
+    "picture_book": 21, "crayon": 22, "toy_car": 23, "puzzle_piece": 24,
+    # Additional classes from Layer 2 dataset (25-40)
+    "carpet": 25, "chimney": 26, "clock": 27, "crib": 28, "cupboard": 29,
+    "curtains": 30, "faucet": 31, "floor_decor": 32, "glass": 33,
+    "pillows": 34, "pots": 35, "rugs": 36, "shelf": 37, "stairs": 38,
+    "storage": 39, "whiteboard": 40,
+    # Additional classes from Layer 3 dataset (41-43)
+    "toy_airplane": 41, "toy_fire_truck": 42, "toy_jeep": 43,
+}
+
+# ── Synonym mappings (alternate name → canonical name) ──────────────────────
+# Applied after normalisation (lowercase, spaces/hyphens → underscores)
+SYNONYMS = {
+    # Plurals / variants → existing canonical names
+    "lamps": "lamp",
+    "table_lamp": "lamp",
+    "light": "lamp",
+    "indoor_plant": "potted_plant",
+    "plant": "potted_plant",
+    "plants": "potted_plant",
+    "tables": "table",
+    "television": "tv",
+    "windows": "window",
+    "shelves": "shelf",
+    # Layer 3 Roboflow names → canonical names
+    "dinosaur": "dinosaur_toy",
+    "cars": "toy_car",
+    # Spelling / formatting variants
+    "chimni": "chimney",
+    "white_board": "whiteboard",
+    "air_plane": "toy_airplane",
+    "fire_truck": "toy_fire_truck",
+    "jeep": "toy_jeep",
 }
 
 # ── Fallback remap tables (used when data.yaml is missing) ──────────────────
@@ -79,6 +117,8 @@ def build_remap_from_yaml(data_yaml_path: Path) -> dict | None:
     remap = {}
     for src_id, class_name in names.items():
         canonical = str(class_name).strip().lower().replace(" ", "_").replace("-", "_")
+        # Apply synonym mapping before lookup
+        canonical = SYNONYMS.get(canonical, canonical)
         if canonical in SEESAW_CLASSES:
             remap[int(src_id)] = SEESAW_CLASSES[canonical]
         else:

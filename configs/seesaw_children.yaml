@@ -1,4 +1,4 @@
-# SeeSaw Children — Unified dataset config (25 classes)
+# SeeSaw Children — Unified dataset config (44 classes)
 # Combines Layer 1 (HomeObjects-3K), Layer 2 (Roboflow/COCO), Layer 3 (original)
 
 path: datasets/seesaw_children
@@ -6,7 +6,7 @@ train: images/train
 val:   images/val
 test:  images/test
 
-nc: 25
+nc: 44
 names:
   0:  bed
   1:  sofa
@@ -33,3 +33,22 @@ names:
   22: crayon
   23: toy_car
   24: puzzle_piece
+  25: carpet
+  26: chimney
+  27: clock
+  28: crib
+  29: cupboard
+  30: curtains
+  31: faucet
+  32: floor_decor
+  33: glass
+  34: pillows
+  35: pots
+  36: rugs
+  37: shelf
+  38: stairs
+  39: storage
+  40: whiteboard
+  41: toy_airplane
+  42: toy_fire_truck
+  43: toy_jeep
