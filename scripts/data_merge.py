@@ -1,57 +1,90 @@
 """DS-019: Merge all three dataset layers into unified seesaw_children dataset.
 
-Reads images and labels from layer1/, layer2/, layer3/, remaps class IDs
-to the canonical 25-class SeeSaw taxonomy, and splits into train/val/test.
+Auto-detects class mappings from Roboflow data.yaml exports and remaps to the
+canonical 25-class SeeSaw taxonomy. Splits into train/val/test.
+
+Usage:
+  # Local (default paths):
+  python scripts/data_merge.py
+
+  # Google Colab (override layer paths):
+  python scripts/data_merge.py \\
+    --layer1 /content/datasets/homeobjects-3K \\
+    --layer2 /content/seesaw-layer2-2 \\
+    --layer3 /content/seesaw-layer3-1 \\
+    --output /content/seesaw-yolo-model/datasets/seesaw_children
 """
 
-import os
+import argparse
 import shutil
 import random
 from pathlib import Path
 
-# ── Class ID remapping tables ────────────────────────────────────────────────
-# Layer 1 (HomeObjects-3K): IDs 0–11 → map directly (no change needed)
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+# ── Canonical 25-class SeeSaw taxonomy (name → ID) ──────────────────────────
+SEESAW_CLASSES = {
+    "bed": 0, "sofa": 1, "chair": 2, "table": 3, "lamp": 4, "tv": 5,
+    "laptop": 6, "wardrobe": 7, "window": 8, "door": 9, "potted_plant": 10,
+    "photo_frame": 11, "teddy_bear": 12, "book": 13, "sports_ball": 14,
+    "backpack": 15, "bottle": 16, "cup": 17, "building_blocks": 18,
+    "dinosaur_toy": 19, "stuffed_animal": 20, "picture_book": 21, "crayon": 22,
+    "toy_car": 23, "puzzle_piece": 24,
+}
+
+# ── Fallback remap tables (used when data.yaml is missing) ──────────────────
+# Layer 1 (HomeObjects-3K): IDs 0–11 map directly
 LAYER1_REMAP = {i: i for i in range(12)}
 
-# Layer 2 (Roboflow / COCO subset): source ID → SeeSaw canonical ID
-# Adjust these mappings after inspecting the actual exported label files (DS-013)
+# Layer 2 (Roboflow): assumes alphabetical ordering by class name
 LAYER2_REMAP = {
-    # Example: Roboflow source_id → SeeSaw target_id
-    # 0: 12,  # teddy_bear
-    # 1: 13,  # book
-    # 2: 14,  # sports_ball
-    # 3: 15,  # backpack
-    # 4: 16,  # bottle
-    # 5: 17,  # cup
+    0: 15,  # backpack
+    1: 13,  # book
+    2: 16,  # bottle
+    3: 17,  # cup
+    4: 14,  # sports_ball
+    5: 12,  # teddy_bear
 }
 
-# Layer 3 (original annotations): source ID → SeeSaw canonical ID
-# Adjust after exporting from Roboflow (DS-017)
+# Layer 3 (original annotations): assumes alphabetical ordering
 LAYER3_REMAP = {
-    # 0: 18,  # building_blocks
-    # 1: 19,  # dinosaur_toy
-    # 2: 20,  # stuffed_animal
-    # 3: 21,  # picture_book
-    # 4: 22,  # crayon
-    # 5: 23,  # toy_car
-    # 6: 24,  # puzzle_piece
+    0: 18,  # building_blocks
+    1: 22,  # crayon
+    2: 19,  # dinosaur_toy
+    3: 21,  # picture_book
+    4: 24,  # puzzle_piece
+    5: 20,  # stuffed_animal
+    6: 23,  # toy_car
 }
-
-# ── Paths ────────────────────────────────────────────────────────────────────
-ROOT = Path(__file__).resolve().parent.parent
-LAYER_DIRS = {
-    "layer1": (ROOT / "datasets" / "layer1", LAYER1_REMAP),
-    "layer2": (ROOT / "datasets" / "layer2", LAYER2_REMAP),
-    "layer3": (ROOT / "datasets" / "layer3", LAYER3_REMAP),
-}
-OUTPUT_DIR = ROOT / "datasets" / "seesaw_children"
 
 SPLIT_RATIOS = {"train": 0.70, "val": 0.15, "test": 0.15}
 RANDOM_SEED = 42
 
 
+def build_remap_from_yaml(data_yaml_path: Path) -> dict | None:
+    """Auto-build source_id → seesaw_id remap from a Roboflow/YOLO data.yaml."""
+    if yaml is None or not data_yaml_path.exists():
+        return None
+    with open(data_yaml_path) as f:
+        meta = yaml.safe_load(f)
+    names = meta.get("names", {})
+    if not names:
+        return None
+    remap = {}
+    for src_id, class_name in names.items():
+        canonical = str(class_name).strip().lower().replace(" ", "_").replace("-", "_")
+        if canonical in SEESAW_CLASSES:
+            remap[int(src_id)] = SEESAW_CLASSES[canonical]
+        else:
+            print(f"    ⚠ Unmapped class: {src_id}={class_name} — skipped")
+    return remap
+
+
 def remap_labels(label_path: Path, class_remap: dict) -> list[str]:
-    """Read a YOLO label file and remap class IDs."""
+    """Read a YOLO label file and remap class IDs. Drops unmapped classes."""
     lines = []
     for line in label_path.read_text().strip().splitlines():
         parts = line.split()
@@ -63,41 +96,89 @@ def remap_labels(label_path: Path, class_remap: dict) -> list[str]:
 
 
 def collect_pairs(layer_dir: Path) -> list[tuple[Path, Path]]:
-    """Find all (image, label) pairs under a layer directory."""
+    """Find all (image, label) pairs under a layer directory.
+
+    Handles both directory layouts:
+      Ultralytics:  root/images/train/img.jpg  →  root/labels/train/img.txt
+      Roboflow:     root/train/images/img.jpg  →  root/train/labels/img.txt
+    """
     pairs = []
-    img_dirs = list(layer_dir.rglob("images"))
-    for img_dir in img_dirs:
-        label_dir = img_dir.parent / "labels" / img_dir.name  # parallel structure
-        if not label_dir.exists():
-            label_dir = img_dir.parent.parent / "labels"
-        for img_path in sorted(img_dir.glob("*")):
-            if img_path.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}:
-                label_path = label_dir / (img_path.stem + ".txt")
-                if label_path.exists():
-                    pairs.append((img_path, label_path))
+    exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+    for img_path in sorted(layer_dir.rglob("*")):
+        if not img_path.is_file() or img_path.suffix.lower() not in exts:
+            continue
+        rel = img_path.relative_to(layer_dir)
+        if "images" not in rel.parts:
+            continue
+        # Mirror path: swap 'images' → 'labels', change extension to .txt
+        label_parts = ["labels" if p == "images" else p for p in rel.parts]
+        label_parts[-1] = img_path.stem + ".txt"
+        label_path = layer_dir / Path(*label_parts)
+        if label_path.exists():
+            pairs.append((img_path, label_path))
     return pairs
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Merge SeeSaw dataset layers")
+    parser.add_argument("--layer1", type=str, help="Path to Layer 1 (HomeObjects-3K)")
+    parser.add_argument("--layer2", type=str, help="Path to Layer 2 (Roboflow export)")
+    parser.add_argument("--layer3", type=str, help="Path to Layer 3 (Roboflow export)")
+    parser.add_argument("--output", type=str, help="Output path for merged dataset")
+    args = parser.parse_args()
+
+    root = Path(__file__).resolve().parent.parent
+
+    layer_cfg = {
+        "layer1": (
+            Path(args.layer1) if args.layer1 else root / "datasets" / "layer1",
+            LAYER1_REMAP,
+        ),
+        "layer2": (
+            Path(args.layer2) if args.layer2 else root / "datasets" / "layer2",
+            LAYER2_REMAP,
+        ),
+        "layer3": (
+            Path(args.layer3) if args.layer3 else root / "datasets" / "layer3",
+            LAYER3_REMAP,
+        ),
+    }
+    output_dir = Path(args.output) if args.output else root / "datasets" / "seesaw_children"
+
     random.seed(RANDOM_SEED)
 
     # Prepare output directories
     for split in SPLIT_RATIOS:
-        (OUTPUT_DIR / "images" / split).mkdir(parents=True, exist_ok=True)
-        (OUTPUT_DIR / "labels" / split).mkdir(parents=True, exist_ok=True)
+        (output_dir / "images" / split).mkdir(parents=True, exist_ok=True)
+        (output_dir / "labels" / split).mkdir(parents=True, exist_ok=True)
 
-    all_entries = []  # (image_path, remapped_label_lines, source_layer)
+    all_entries = []
 
-    for layer_name, (layer_dir, remap) in LAYER_DIRS.items():
+    for layer_name, (layer_dir, fallback_remap) in layer_cfg.items():
         if not layer_dir.exists():
-            print(f"⚠ {layer_name} directory not found: {layer_dir} — skipping")
+            print(f"⚠ {layer_name} not found: {layer_dir} — skipping")
             continue
+
+        # Auto-detect remap from data.yaml, fall back to manual table
+        remap = build_remap_from_yaml(layer_dir / "data.yaml")
+        if remap is not None:
+            print(f"  {layer_name}: auto-remap from data.yaml ({len(remap)} classes)")
+        else:
+            remap = fallback_remap
+            print(f"  {layer_name}: using fallback remap ({len(remap)} classes)")
+
         pairs = collect_pairs(layer_dir)
+        mapped_count = 0
         for img_path, lbl_path in pairs:
             remapped = remap_labels(lbl_path, remap)
             if remapped:
                 all_entries.append((img_path, remapped, layer_name))
-        print(f"✓ {layer_name}: {len(pairs)} image-label pairs found")
+                mapped_count += 1
+        print(f"✓ {layer_name}: {len(pairs)} pairs found, {mapped_count} with mapped labels")
+
+    if not all_entries:
+        print("✗ No entries found. Check layer paths and remap dictionaries.")
+        return
 
     # Shuffle and split
     random.shuffle(all_entries)
@@ -112,14 +193,16 @@ def main():
     }
 
     for split_name, entries in splits.items():
-        for img_path, label_lines, _ in entries:
-            dst_img = OUTPUT_DIR / "images" / split_name / img_path.name
-            dst_lbl = OUTPUT_DIR / "labels" / split_name / (img_path.stem + ".txt")
+        for img_path, label_lines, layer_name in entries:
+            # Prefix filename with layer to avoid collisions across layers
+            safe_name = f"{layer_name}_{img_path.name}"
+            dst_img = output_dir / "images" / split_name / safe_name
+            dst_lbl = output_dir / "labels" / split_name / f"{layer_name}_{img_path.stem}.txt"
             shutil.copy2(img_path, dst_img)
             dst_lbl.write_text("\n".join(label_lines) + "\n")
         print(f"  {split_name}: {len(entries)} images")
 
-    print(f"\n✓ Merged dataset written to {OUTPUT_DIR}")
+    print(f"\n✓ Merged dataset written to {output_dir}")
     print(f"  Total: {n} images across {len(SPLIT_RATIOS)} splits")
 
 
