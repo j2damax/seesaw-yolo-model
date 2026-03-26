@@ -73,6 +73,9 @@ def build_remap_from_yaml(data_yaml_path: Path) -> dict | None:
     names = meta.get("names", {})
     if not names:
         return None
+    # Handle both dict ({0: "bed", ...}) and list (["bed", ...]) formats
+    if isinstance(names, list):
+        names = {i: n for i, n in enumerate(names)}
     remap = {}
     for src_id, class_name in names.items():
         canonical = str(class_name).strip().lower().replace(" ", "_").replace("-", "_")
