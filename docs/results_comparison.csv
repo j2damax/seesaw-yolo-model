@@ -1,0 +1,4 @@
+model,map50,map50_95,precision,recall
+Run_A_COCO,0.0147,0.0137,0.0118,0.0286
+Run_B_Layer1,0.8223,0.6087,0.8022,0.7378
+Run_C_AllLayers,0.4972,0.3789,0.7083,0.4173
