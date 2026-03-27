@@ -209,13 +209,7 @@ Training outputs saved to `runs/detect/run_c_all_layers/` after each run:
 ---
 
 ## Dissertation & Publication
-
 This work is documented for academic submission:
-- **Chapter 4 (Dataset):** [IMPLEMENTATION_FINAL_SPECIFICATION.md](IMPLEMENTATION_FINAL_SPECIFICATION.md#dataset-construction), Section 4.X
-- **Chapter 4 (Training):** [IMPLEMENTATION_FINAL_SPECIFICATION.md](IMPLEMENTATION_FINAL_SPECIFICATION.md#model-training), Section 4.Y
-- **Chapter 6 (Results):** [IMPLEMENTATION_FINAL_SPECIFICATION.md](IMPLEMENTATION_FINAL_SPECIFICATION.md#quantitative-results), Section 6.X
-- **All Figures:** [docs/dissertation_figures/](docs/dissertation_figures/) (publication-quality PNG/JPG)
-
 ---
 
 ## License & Attribution
@@ -233,7 +227,6 @@ See [docs/](docs/) for full dataset license details.
 
 **Project:** SeeSaw Wearable AI Companion  
 **Author:** Jayampathy Balasuriya  
-**Institution:** University of Edinburgh  
 **Codebase:** https://github.com/j2damax/seesaw-yolo-model
 
 For questions on training, evaluation, or iOS integration, refer to [`IMPLEMENTATION_FINAL_SPECIFICATION.md`](IMPLEMENTATION_FINAL_SPECIFICATION.md).
