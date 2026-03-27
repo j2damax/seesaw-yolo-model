@@ -263,3 +263,38 @@ let model = try VNCoreMLModel(for: seesaw_yolo11n(configuration: .init()).model)
 
 **Report prepared:** 27 March 2026  
 **Repository:** https://github.com/j2damax/seesaw-yolo-model  
+
+## 0. Architecture Overview
+```
+┌─────────────────────────────────────────────────────────┐
+│              Three-Layer Dataset Strategy               │
+│                                                         │
+│  Layer 1 — HomeObjects-3K (Ultralytics Official)        │
+│    12 classes, 2,285 train / 404 val images             │
+│    Auto-download via YAML — zero manual work            │
+│                                ↓ merge                  │
+│  Layer 2 — Roboflow Universe Datasets (CC BY 4.0)       │
+│    ~500–800 images from 3 curated public datasets       │
+│    Children's toys, indoor playroom, COCO subset        │
+│                                ↓ merge                  │
+│  Layer 3 — Your Own Annotations (Research Contribution) │
+│    50–100 images captured in real child environments    │
+│    Annotated in Roboflow, exported as YOLO format       │
+│                                ↓                        │
+│  Combined: seesaw_children.yaml                         │
+│    ~3,000–3,400 images, 25 classes                      │
+│                                ↓                        │
+│  Training (Google Colab T4 GPU, free tier)              │
+│    Base: yolo11n.pt (COCO pretrained)                   │
+│    Fine-tune on combined dataset, 50 epochs             │
+│                                ↓                        │
+│  Evaluation                                             │
+│    mAP@50, mAP@50-95, Confusion Matrix                  │
+│    vs. COCO baseline on same test set                   │
+│                                ↓                        │
+│  Export                                                 │
+│    seesaw-yolo11n.mlpackage (CoreML, nms=True)          │
+│    Drop into seesaw-companion-ios Xcode project         │
+└─────────────────────────────────────────────────────────┘
+```
+
