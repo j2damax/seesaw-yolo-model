@@ -224,5 +224,5 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# Markdown files
-*.md
+# Markdown files (EXCLUDED from gitignore for final submission)
+# *.md  — All .md files now tracked (README, IMPLEMENTATION_FINAL_SPECIFICATION, etc.)
