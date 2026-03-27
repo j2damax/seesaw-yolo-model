@@ -4,14 +4,24 @@
 Use this after running training in Colab (or from a downloaded run folder) to copy
 all required artifacts into the local repo so everything is version-controlled.
 
-Examples:
+COLAB USAGE (recommended — auto-detects environment):
+  !python scripts/sync_artifacts.py --overwrite
+
+LOCAL/MANUAL USAGE (specify sources explicitly):
   python scripts/sync_artifacts.py \
     --source /content/seesaw-yolo-model \
-    --source /content/drive/MyDrive/seesaw-yolo-runs
+    --source /content/drive/MyDrive/seesaw-yolo-runs \
+    --overwrite
 
   python scripts/sync_artifacts.py \
     --source ~/Downloads/seesaw-colab-export \
     --overwrite
+
+ARTIFACT POLICY:
+  - docs/dissertation_figures/*.png, .jpg  [REQUIRED] — dissertation
+  - docs/results_comparison.csv             [REQUIRED] — metrics table
+  - export/seesaw-yolo11n.mlpackage         [REQUIRED] — iOS model
+  - datasets/seesaw_children                 [OPTIONAL] — large; use --include-dataset to sync
 """
 
 from __future__ import annotations
@@ -31,7 +41,7 @@ class Artifact:
 
 
 ARTIFACTS: tuple[Artifact, ...] = (
-    # Dataset (required for reproducibility in this module)
+    # Dataset (optional — large; use --include-dataset to sync)
     Artifact(
         destination="datasets/seesaw_children",
         candidates=(
@@ -39,7 +49,7 @@ ARTIFACTS: tuple[Artifact, ...] = (
             "seesaw-yolo-model/datasets/seesaw_children",
             "seesaw_children",
         ),
-        required=True,
+        required=False,  # Large; only include if explicitly requested
     ),
     # Core evaluation outputs
     Artifact(
@@ -123,8 +133,13 @@ def parse_args() -> argparse.Namespace:
         "--source",
         type=Path,
         action="append",
-        required=True,
-        help="Artifact source root. Provide multiple --source entries to search in order.",
+        help="Artifact source root. Provide multiple --source entries to search in order. "
+             "Auto-detected in Colab if not provided.",
+    )
+    parser.add_argument(
+        "--include-dataset",
+        action="store_true",
+        help="Also sync datasets/seesaw_children (large; ~200+ MB). By default, only core artifacts are synced.",
     )
     parser.add_argument(
         "--overwrite",
@@ -171,18 +186,43 @@ def main() -> int:
     args = parse_args()
 
     repo_root = args.repo_root.resolve()
+    
+    # Auto-detect Colab environment and set default sources
+    in_colab = Path("/content").exists()
+    
+    if args.source is None:
+        if in_colab:
+            # Colab default: search repo, then Drive artifacts
+            args.source = [
+                Path("/content/seesaw-yolo-model"),
+                Path("/content/drive/MyDrive/seesaw-yolo-runs"),
+            ]
+            print("[Colab detected] Using default source roots")
+        else:
+            print("ERROR: No --source provided and not in Colab. Specify --source or run in Colab.")
+            return 1
+    
     source_roots = [s.expanduser().resolve() for s in args.source]
 
-    print("Repo root:", repo_root)
-    print("Source roots (search order):")
+    print(f"Repo root: {repo_root}")
+    print(f"Source roots (search order):")
     for s in source_roots:
-        print(" -", s)
+        exists = "✓" if s.exists() else "✗"
+        print(f"  {exists} {s}")
+    
+    # Filter artifacts: exclude dataset unless --include-dataset
+    artifacts = ARTIFACTS
+    if not args.include_dataset:
+        artifacts = tuple(a for a in artifacts if a.destination != "datasets/seesaw_children")
+        print(f"\nIncluded artifacts: {len(artifacts)} (excluding {len(ARTIFACTS) - len(artifacts)} optional)")
+    else:
+        print(f"\nIncluded artifacts: {len(artifacts)} (all)")
 
     missing_required = 0
     copied = 0
     skipped = 0
 
-    for artifact in ARTIFACTS:
+    for artifact in artifacts:
         src = None
         for rel in artifact.candidates:
             src = existing_candidate(source_roots, rel)
@@ -203,18 +243,29 @@ def main() -> int:
             copied += 1
         else:
             skipped += 1
-        print(f"{result}: {src} -> {dst}")
+        print(f"{result}: {src} → {dst}")
 
-    print("\nSummary")
-    print(" - copied:", copied)
-    print(" - skipped:", skipped)
-    print(" - missing required:", missing_required)
+    print("\n" + "=" * 70)
+    print("Summary")
+    print(f"  Copied:           {copied}")
+    print(f"  Skipped (exist):  {skipped}")
+    print(f"  Missing required: {missing_required}")
+    
+    if args.dry_run:
+        print("  (dry-run: no files were actually copied)")
 
     if missing_required:
-        print("\nSome required artifacts are still missing. Add another --source path and run again.")
+        print("\nSome required artifacts are still missing.")
+        if not args.include_dataset:
+            print("  Use --include-dataset to sync the full merged dataset.")
+        print("  Add another --source path or check artifact locations.")
         return 2
 
-    print("\nAll required artifacts are now available in the repository.")
+    if copied == 0 and not args.dry_run:
+        print("\n✓ All required artifacts already exist in repository.")
+    elif copied > 0:
+        print("\n✓ Artifacts synced successfully.")
+    
     return 0
 
 
