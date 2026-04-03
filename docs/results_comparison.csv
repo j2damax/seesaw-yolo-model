@@ -1,4 +1,4 @@
-model,map50,map50_95,precision,recall
-Run_A_COCO,0.0112,0.0085,0.0219,0.0135
-Run_B_Layer1,0.8614,0.6445,0.8635,0.7568
-Run_C_AllLayers,0.6748,0.4552,0.6975,0.6462
+model,dataset,map50,map50_95,precision,recall
+Run_A_COCO,HomeObjects-3K,0.0105,0.0077,0.0208,0.0084
+Run_B_Layer1,HomeObjects-3K,0.7010,0.4913,0.7502,0.6088
+Run_C_AllLayers,HomeObjects-3K,0.8490,0.6479,0.8241,0.7780
